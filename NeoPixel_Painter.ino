@@ -5,7 +5,7 @@
 // http://code.google.com/p/sdfatlib/
 
 // As written, uses a momentary pushbutton connected between pin A1 and
-// GND to trigger playback.  An analog potentiometer connected to A0 sets
+// GND to trigger playback.   An analog potentiometer connected to A0 sets
 // the brightness at startup and the playback speed each time the trigger
 // is tapped.  BRIGHTNESS IS SET ONLY AT STARTUP; can't adjust this in
 // realtime, not fast enough.  To change brightness, set dial and tap reset.
@@ -40,7 +40,7 @@
 
 #define N_LEDS       144 // Max value is 170 (fits one SD card block)
 #define CARD_SELECT   10 // SD card select pin (some shields use #4, not 10)
-#define LED_PIN        6 // NeoPixels connect here
+#define LED_PIN       9 // NeoPixels connect here
 #define SPEED         A0 // Speed-setting dial
 #define BRIGHTNESS    A0 // Brightness-setting dial
 #define TRIGGER       A1 // Playback trigger pin
@@ -86,6 +86,7 @@ void setup() {
   uint8_t  b, startupTrigger, minBrightness;
   char     infile[13], outfile[13];
   boolean  found;
+  byte dp_on;
   uint16_t i, n;
   SdFile   tmp;
   uint32_t lastBlock;
@@ -95,6 +96,13 @@ void setup() {
   startupTrigger = digitalRead(TRIGGER); // Poll startup trigger ASAP
   Serial.begin(57600);
   pinMode(LED_PIN, OUTPUT);              // Enable NeoPixel output
+  pinMode(2, OUTPUT);   
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(7, OUTPUT);
+  pinMode(8, OUTPUT);
   digitalWrite(LED_PIN, LOW);            // Default logic state = low
   port    = portOutputRegister(digitalPinToPort(LED_PIN));
   pinMask = digitalPinToBitMask(LED_PIN);
@@ -134,6 +142,7 @@ void setup() {
       sprintf(infile, "frame%03d.bmp", nFrames);
       b = 255;
       if(found = bmpProcess(root, infile, NULL, &b)) { // b modified to safe max
+        sevenSegWrite(nFrames % 10);
         nFrames++;
         if(b < minBrightness) minBrightness = b;
       }
@@ -155,6 +164,7 @@ void setup() {
       sprintf(infile , "frame%03d.bmp", i);
       sprintf(outfile, "frame%03d.tmp", i);
       b = minBrightness;
+      sevenSegWrite(i % 10);
       bmpProcess(root, infile, outfile, &b);
     }
     while(digitalRead(TRIGGER) == LOW); // Wait for button release
@@ -213,6 +223,8 @@ void setup() {
   // Timer0 interrupt is disabled for smoother playback.
   // This means delay(), millis(), etc. won't work after this.
   TIMSK0 = 0;
+  
+  sevenSegWrite(0);
 }
 
 // Startup error handler; doesn't return, doesn't run loop(), just stops.
@@ -283,6 +295,12 @@ void loop() {
   }
 
   if(++frame >= nFrames) frame = 0;
+  
+  //do {
+    sevenSegWrite(frame % 10);
+  //  delay(100);
+  //} while (stopFlag);
+  
 }
 
 // BMP->NEOPIXEL FILE CONVERSION ---------------------------------------------
@@ -547,4 +565,24 @@ static void show(void) {
   interrupts();
   // There's no explicit 50 uS delay here as with most NeoPixel code;
   // SD card block read provides ample time for latch!
+}
+
+byte seven_seg_digits[10][7] = { { 0,0,0,0,0,0,1 },  // = 0
+                                 { 1,0,0,1,1,1,1 },  // = 1
+                                 { 0,0,1,0,0,1,0 },  // = 2
+                                 { 0,0,0,0,1,1,0 },  // = 3
+                                 { 1,0,0,1,1,0,0 },  // = 4
+                                 { 0,1,0,0,1,0,0 },  // = 5
+                                 { 0,1,0,0,0,0,0 },  // = 6
+                                 { 0,0,0,1,1,1,1 },  // = 7
+                                 { 0,0,0,0,0,0,0 },  // = 8
+                                 { 0,0,0,1,1,0,0 }   // = 9
+                                };-
+    
+void sevenSegWrite(byte digit) {
+  byte pin = 2;
+  for (byte segCount = 0; segCount < 7; ++segCount) {
+    digitalWrite(pin, seven_seg_digits[digit][segCount]);
+    ++pin;
+  }
 }
