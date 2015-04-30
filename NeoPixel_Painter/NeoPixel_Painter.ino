@@ -264,8 +264,9 @@ uint16_t buttonDetect() {
     Serial.println(button);
   }
   buttonWasPressed = button > 0;
-  delay(50);
-  return button;
+  
+  if (event) {return button;}
+  return 0;
 }
 
 void updateFrameCount() {
@@ -310,8 +311,8 @@ void loop() {
 
   uint16_t button = buttonDetect();
   //while(button == 0);   // Wait for trigger button
-  if (button==FWD_BTN) {frame++;button=0;updateFrameCount();}
-  if (button==PREV_BTN && frame > 0) {frame--;button=0;updateFrameCount();}
+  if (button==FWD_BTN) {Serial.print("++");frame++;button=0;updateFrameCount();}
+  if (button==PREV_BTN && frame > 0) {Serial.print("--");frame--;button=0;updateFrameCount();}
   
   delay(50);
 #ifdef ENCODERSTEPS
