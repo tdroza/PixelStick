@@ -44,7 +44,12 @@
 #define SPEED         A0 // Speed-setting dial
 #define BRIGHTNESS    A0 // Brightness-setting dial
 #define TRIGGER       A1 // Playback trigger pin
+#define SEEK_FWD      A4 // Advance to next image
+#define SEEK_PREV     A5 // Move back to previous image
 #define CURRENT_MAX 3500 // Max current from power supply (mA)
+#define TRIGGER_BTN 1
+#define PREV_BTN    2
+#define FWD_BTN     3
 // The software does its best to limit the LED brightness to a level that's
 // manageable by the power supply.  144 NeoPixels at full brightness can
 // draw about 10 Amps(!), while the UBEC (buck converter) sold by Adafruit
@@ -79,11 +84,12 @@ Sd2Card           card;        // SD card global instance (only one)
 SdVolume          volume;      // Filesystem global instance (only one)
 SdFile            root;        // Root directory (only one)
 volatile uint8_t *port;        // NeoPixel PORT register
+boolean buttonWasPressed = false;
 
 // INITIALIZATION ------------------------------------------------------------
 
 void setup() {
-  uint8_t  b, startupTrigger, minBrightness;
+  uint8_t  b, startupTrigger, startupSeekEnd, minBrightness;
   char     infile[13], outfile[13];
   boolean  found;
   byte dp_on;
@@ -93,7 +99,10 @@ void setup() {
 
 
   digitalWrite(TRIGGER, HIGH);           // Enable pullup on trigger button
+  digitalWrite(SEEK_FWD, HIGH);
+  digitalWrite(SEEK_PREV, HIGH);
   startupTrigger = digitalRead(TRIGGER); // Poll startup trigger ASAP
+  startupSeekEnd = digitalRead(SEEK_FWD); // Poll SeekFwd ASAP
   Serial.begin(57600);
   pinMode(LED_PIN, OUTPUT);              // Enable NeoPixel output
   pinMode(2, OUTPUT);   
@@ -182,6 +191,11 @@ void setup() {
     } while(found);
 
   } // end startupTrigger test
+  
+  if (startupSeekEnd == LOW) {
+    // Fwd button was pressed at startup, so start playback at end
+    frame = nFrames;
+  }
 
 #ifdef ENCODERSTEPS
   // To use a rotary encoder rather than timer, connect one output
@@ -224,13 +238,44 @@ void setup() {
   // This means delay(), millis(), etc. won't work after this.
   TIMSK0 = 0;
   
-  sevenSegWrite(0);
+  sevenSegWrite(frame);
 }
 
 // Startup error handler; doesn't return, doesn't run loop(), just stops.
 static void error(const __FlashStringHelper *ptr) {
     Serial.println(ptr); // Show message
     for(;;);             // and hang
+}
+
+
+uint16_t buttonDetect() {
+  uint16_t button = 0;
+  boolean event = false;
+  if (digitalRead(TRIGGER)==LOW) {
+    button=TRIGGER_BTN;
+  } else if (digitalRead(SEEK_PREV)==LOW) {
+    button=PREV_BTN;
+  } else if (digitalRead(SEEK_FWD)==LOW) {
+    button=FWD_BTN;
+  }
+  event = button && !buttonWasPressed;
+  if (event) {
+    Serial.print ("Button pressed? ");
+    Serial.println(button);
+  }
+  buttonWasPressed = button > 0;
+  delay(50);
+  return button;
+}
+
+void updateFrameCount() {
+  Serial.print("Frame: ");
+  Serial.println( frame);
+    if(frame >= nFrames) frame = 0;
+  
+    Serial.print("Frame: ");
+  Serial.println( frame);
+    sevenSegWrite(frame % 10);
 }
 
 // PLAYBACK LOOP -------------------------------------------------------------
@@ -263,8 +308,12 @@ void loop() {
   // readBlock is used rather than readStart/readData/readEnd as
   // the duration between block reads may exceed the SD timeout.
 
-  while(digitalRead(TRIGGER) == HIGH);   // Wait for trigger button
-
+  uint16_t button = buttonDetect();
+  //while(button == 0);   // Wait for trigger button
+  if (button==FWD_BTN) {frame++;button=0;updateFrameCount();}
+  if (button==PREV_BTN && frame > 0) {frame--;button=0;updateFrameCount();}
+  
+  delay(50);
 #ifdef ENCODERSTEPS
   // Set up for rotary encoder
   TCNT1 = 0;
@@ -275,32 +324,26 @@ void loop() {
   // Serial.println(linesPerSec);
   OCR1A = (F_CPU / 64) / linesPerSec;          // Timer1 interval
 #endif
-
-  for(;;) {
-    while(!(TIFR1 & _BV(TOV1)));               // Wait for Timer1 overflow
-    TIFR1 |= _BV(TOV1);                        // Clear overflow bit
-
-    show();                                    // Display current line
-    if(stopFlag) break;                        // Break when done
-
-    if(++block >= nBlocks) {                   // Past last block?
-      if(digitalRead(TRIGGER) == HIGH) {       // Trigger released?
-        memset(sdBuf, 0, N_LEDS * 3);          // LEDs off on next pass
-        stopFlag = true;                       // Stop playback on next pass
-        continue;
-      }                                        // Else trigger still held
-      block = 0;                               // Loop back to start
+  if (button==TRIGGER_BTN) {
+    Serial.println("TRIGGER!");
+    for(;;) {
+      while(!(TIFR1 & _BV(TOV1)));               // Wait for Timer1 overflow
+      TIFR1 |= _BV(TOV1);                        // Clear overflow bit
+  
+      show();                                    // Display current line
+      if(stopFlag) break;                        // Break when done
+  
+      if(++block >= nBlocks) {                   // Past last block?
+        if(digitalRead(TRIGGER) == HIGH) {       // Trigger released?
+          memset(sdBuf, 0, N_LEDS * 3);          // LEDs off on next pass
+          stopFlag = true;                       // Stop playback on next pass
+          continue;
+        }                                        // Else trigger still held
+        block = 0;                               // Loop back to start
+      }
+      card.readBlock(block + firstBlock, sdBuf); // Load next pixel row
     }
-    card.readBlock(block + firstBlock, sdBuf); // Load next pixel row
   }
-
-  if(++frame >= nFrames) frame = 0;
-  
-  //do {
-    sevenSegWrite(frame % 10);
-  //  delay(100);
-  //} while (stopFlag);
-  
 }
 
 // BMP->NEOPIXEL FILE CONVERSION ---------------------------------------------
@@ -577,7 +620,7 @@ byte seven_seg_digits[10][7] = { { 0,0,0,0,0,0,1 },  // = 0
                                  { 0,0,0,1,1,1,1 },  // = 7
                                  { 0,0,0,0,0,0,0 },  // = 8
                                  { 0,0,0,1,1,0,0 }   // = 9
-                                };-
+                                };
     
 void sevenSegWrite(byte digit) {
   byte pin = 2;
