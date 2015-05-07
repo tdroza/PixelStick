@@ -85,7 +85,19 @@ SdVolume          volume;      // Filesystem global instance (only one)
 SdFile            root;        // Root directory (only one)
 volatile uint8_t *port;        // NeoPixel PORT register
 boolean buttonWasPressed = false;
-
+                               
+byte seven_seg_digits[10][7] = { { 1,1,1,1,1,1,0 },  // = 0
+                                 { 0,1,1,0,0,0,0 },  // = 1
+                                 { 1,1,0,1,1,0,1 },  // = 2
+                                 { 1,1,1,1,0,0,1 },  // = 3
+                                 { 0,1,1,0,0,1,1 },  // = 4
+                                 { 1,0,1,1,0,1,1 },  // = 5
+                                 { 1,0,1,1,1,1,1 },  // = 6
+                                 { 1,1,1,0,0,0,0 },  // = 7
+                                 { 1,1,1,1,1,1,1 },  // = 8
+                                 { 1,1,1,0,0,1,1 }   // = 9
+                                };
+                                
 // INITIALIZATION ------------------------------------------------------------
 
 void setup() {
@@ -610,18 +622,6 @@ static void show(void) {
   // There's no explicit 50 uS delay here as with most NeoPixel code;
   // SD card block read provides ample time for latch!
 }
-
-byte seven_seg_digits[10][7] = { { 0,0,0,0,0,0,1 },  // = 0
-                                 { 1,0,0,1,1,1,1 },  // = 1
-                                 { 0,0,1,0,0,1,0 },  // = 2
-                                 { 0,0,0,0,1,1,0 },  // = 3
-                                 { 1,0,0,1,1,0,0 },  // = 4
-                                 { 0,1,0,0,1,0,0 },  // = 5
-                                 { 0,1,0,0,0,0,0 },  // = 6
-                                 { 0,0,0,1,1,1,1 },  // = 7
-                                 { 0,0,0,0,0,0,0 },  // = 8
-                                 { 0,0,0,1,1,0,0 }   // = 9
-                                };
     
 void sevenSegWrite(byte digit) {
   byte pin = 2;
