@@ -44,6 +44,8 @@
 #define SPEED         A0 // Speed-setting dial
 #define BRIGHTNESS    A0 // Brightness-setting dial
 #define TRIGGER       A1 // Playback trigger pin
+#define DIGIT_1       A2
+#define DIGIT_2       A3
 #define SEEK_FWD      A4 // Advance to next image
 #define SEEK_PREV     A5 // Move back to previous image
 #define CURRENT_MAX 3500 // Max current from power supply (mA)
@@ -85,7 +87,9 @@ SdVolume          volume;      // Filesystem global instance (only one)
 SdFile            root;        // Root directory (only one)
 volatile uint8_t *port;        // NeoPixel PORT register
 boolean buttonWasPressed = false;
-                               
+                              
+boolean firstDigit = true;  
+
 byte seven_seg_digits[10][7] = { { 1,1,1,1,1,1,0 },  // = 0
                                  { 0,1,1,0,0,0,0 },  // = 1
                                  { 1,1,0,1,1,0,1 },  // = 2
@@ -109,10 +113,14 @@ void setup() {
   SdFile   tmp;
   uint32_t lastBlock;
 
+  pinMode(DIGIT_1, OUTPUT);
+  pinMode(DIGIT_2, OUTPUT);
 
   digitalWrite(TRIGGER, HIGH);           // Enable pullup on trigger button
   digitalWrite(SEEK_FWD, HIGH);
   digitalWrite(SEEK_PREV, HIGH);
+  digitalWrite(DIGIT_1, LOW);
+  digitalWrite(DIGIT_2, LOW);
   startupTrigger = digitalRead(TRIGGER); // Poll startup trigger ASAP
   startupSeekEnd = digitalRead(SEEK_FWD); // Poll SeekFwd ASAP
   Serial.begin(57600);
@@ -163,7 +171,7 @@ void setup() {
       sprintf(infile, "frame%03d.bmp", nFrames);
       b = 255;
       if(found = bmpProcess(root, infile, NULL, &b)) { // b modified to safe max
-        sevenSegWrite(nFrames % 10);
+        sevenSegWrite(nFrames);
         nFrames++;
         if(b < minBrightness) minBrightness = b;
       }
@@ -185,7 +193,7 @@ void setup() {
       sprintf(infile , "frame%03d.bmp", i);
       sprintf(outfile, "frame%03d.tmp", i);
       b = minBrightness;
-      sevenSegWrite(i % 10);
+      sevenSegWrite(i);
       bmpProcess(root, infile, outfile, &b);
     }
     while(digitalRead(TRIGGER) == LOW); // Wait for button release
@@ -282,13 +290,8 @@ uint16_t buttonDetect() {
 }
 
 void updateFrameCount() {
-  Serial.print("Frame: ");
-  Serial.println( frame);
     if(frame >= nFrames) frame = 0;
-  
-    Serial.print("Frame: ");
-  Serial.println( frame);
-    sevenSegWrite(frame % 10);
+    sevenSegWrite(frame);
 }
 
 // PLAYBACK LOOP -------------------------------------------------------------
@@ -323,9 +326,12 @@ void loop() {
 
   uint16_t button = buttonDetect();
   //while(button == 0);   // Wait for trigger button
-  if (button==FWD_BTN) {Serial.print("++");frame++;button=0;updateFrameCount();}
-  if (button==PREV_BTN && frame > 0) {Serial.print("--");frame--;button=0;updateFrameCount();}
-  
+  if (button==FWD_BTN) {frame++;button=0;}
+  if (button==PREV_BTN) {
+    if (frame > 0) {frame--;} else {frame = nFrames-1;}
+    button=0;
+  }
+  updateFrameCount();
   delay(50);
 #ifdef ENCODERSTEPS
   // Set up for rotary encoder
@@ -623,10 +629,21 @@ static void show(void) {
   // SD card block read provides ample time for latch!
 }
     
-void sevenSegWrite(byte digit) {
+void sevenSegWrite(byte num) {
   byte pin = 2;
+  digitalWrite(DIGIT_1, firstDigit);
+  digitalWrite(DIGIT_2, !firstDigit);
+   
+  byte numeral;
+  
+  if (firstDigit) {
+    numeral = num / 10;
+  } else {
+    numeral = num % 10;
+  }
   for (byte segCount = 0; segCount < 7; ++segCount) {
-    digitalWrite(pin, seven_seg_digits[digit][segCount]);
+    digitalWrite(pin, seven_seg_digits[numeral][segCount]);
     ++pin;
   }
+  firstDigit = !firstDigit;
 }
